@@ -34,8 +34,10 @@ jobs:
           sudo xcode-select -s "$LATEST/Contents/Developer"
           xcodebuild -version
 
-      - name: Install xcodegen
-        run: brew install xcodegen
+      - name: Install tooling (xcodegen, ffmpeg/ffprobe, Pillow)
+        run: |
+          brew install xcodegen ffmpeg
+          python3 -m pip install --break-system-packages --quiet pillow
 
       - name: Generate + build (simulator, no signing)
         run: |
