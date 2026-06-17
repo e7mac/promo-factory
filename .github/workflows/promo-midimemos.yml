@@ -26,6 +26,14 @@ jobs:
           git clone --depth 1 -b main https://github.com/e7mac/MusicCore.git
           git clone --depth 1 -b main https://github.com/e7mac/PromoKit.git
 
+      - name: Select newest installed Xcode
+        run: |
+          echo "Available:"; ls -d /Applications/Xcode_*.app 2>/dev/null || true
+          LATEST=$(ls -d /Applications/Xcode_*.app 2>/dev/null | sort -V | tail -1)
+          echo "Selecting $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+
       - name: Install xcodegen
         run: brew install xcodegen
 
