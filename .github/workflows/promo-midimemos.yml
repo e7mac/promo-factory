@@ -31,12 +31,15 @@ jobs:
 
       - name: Generate + build (simulator, no signing)
         run: |
+          echo "Xcode: $(xcodebuild -version | tr '\n' ' ')"
           cd fleet/midi-memos
           xcodegen generate
+          set -o pipefail
           xcodebuild build -scheme MidiMemos \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
-            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -8
-          test "${PIPESTATUS[0]:-0}" = "0"
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tee /tmp/build.log | grep -E "error:|BUILD SUCCEEDED|BUILD FAILED" || true
+          echo "=== compiler errors ==="; grep -E "error:" /tmp/build.log | sort -u | head -25
+          grep -q "BUILD SUCCEEDED" /tmp/build.log
 
       - name: Boot sim + capture + frame
         run: |
