@@ -10,17 +10,26 @@ set -e
 DIR="${0:A:h}"
 VID="$1"; AUD="$2"; CAP="$3"; OUT="$4"
 
-# 1. Clapperboard flash in video (white → black after negate).
-read TV TVE < <(ffmpeg -hide_banner -i "$VID" -vf "negate,blackdetect=d=0.08:pix_th=0.10" -f null - 2>&1 \
-  | grep -oE "black_start:[0-9.]+ black_end:[0-9.]+" | head -1 | sed -E 's/black_start:([0-9.]+) black_end:([0-9.]+)/\1 \2/')
+# 1. Clapperboard flash in video (white → black after negate). Robust: never let an empty
+#    detection kill the script under set -e.
+DET=$(ffmpeg -hide_banner -i "$VID" -vf "negate,blackdetect=d=0.06:pix_th=0.10" -f null - 2>&1 \
+  | grep -oE "black_start:[0-9.]+ black_end:[0-9.]+" | head -1 || true)
+TV=$(printf '%s' "$DET"  | grep -oE "black_start:[0-9.]+" | cut -d: -f2 || true)
+TVE=$(printf '%s' "$DET" | grep -oE "black_end:[0-9.]+"   | cut -d: -f2 || true)
 # 2. Click onset in audio (first onset).
 TA=$(ffmpeg -hide_banner -i "$AUD" -af "silencedetect=noise=-30dB:d=0.03" -f null - 2>&1 \
-  | grep -oE "silence_end: [0-9.]+" | head -1 | grep -oE "[0-9.]+")
-if [[ -z "$TV" || -z "$TA" ]]; then echo "ERROR: clapperboard not found (flash=$TV click=$TA)"; exit 1; fi
+  | grep -oE "silence_end: [0-9.]+" | head -1 | grep -oE "[0-9.]+" || true)
+echo "detect: flash=$TV flash_end=$TVE click=$TA"
 
-OFFSET=$(python3 -c "print(round($TV - $TA, 3))")
-TRIM=$(python3 -c "print(round($TVE + 0.08, 3))")   # start just after the flash ends
-echo "clapperboard: flash@${TV}s click@${TA}s → audio offset ${OFFSET}s, trim @${TRIM}s"
+if [[ -n "$TV" && -n "$TA" ]]; then
+  OFFSET=$(python3 -c "print(round($TV - $TA, 3))")
+  TRIM=$(python3 -c "print(round($TVE + 0.08, 3))")
+  echo "clapperboard: flash@${TV}s click@${TA}s → audio offset ${OFFSET}s, trim @${TRIM}s"
+else
+  # Fallback: no visual flash detected — best-effort, audio at offset 0, no clapperboard trim.
+  OFFSET=0; TRIM=0
+  echo "WARN: no clapperboard flash detected — framing with offset 0 (A/V may be slightly off)"
+fi
 
 # 3. Delay the WAV onto the video timeline, trim off the clapperboard. Preserve VFR video timing.
 ALIGNED="${OUT:r}_aligned.mp4"

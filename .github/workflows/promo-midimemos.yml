@@ -66,6 +66,17 @@ jobs:
             "${{ inputs.caption }}" "$PROMO_ROOT/midimemos_promo.mp4"
           ls -la "$PROMO_ROOT/midimemos_promo.mp4"
 
+      - name: Upload raw capture (always, for inspection)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: midimemos-raw
+          path: |
+            promo-out/raw/midimemos_video.mp4
+            promo-out/raw/midimemos_audio.wav
+            promo-out/raw/midimemos.markers
+          if-no-files-found: warn
+
       - uses: actions/upload-artifact@v4
         with:
           name: midimemos-promo
