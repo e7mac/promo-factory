@@ -46,7 +46,7 @@ jobs:
           xcodebuild build -scheme MidiMemos \
             -destination 'platform=iOS Simulator,name=iPhone 16' \
             CODE_SIGNING_ALLOWED=NO 2>&1 | tee /tmp/build.log | grep -E "error:|BUILD SUCCEEDED|BUILD FAILED" || true
-          echo "=== compiler errors ==="; grep -E "error:" /tmp/build.log | sort -u | head -25
+          echo "=== compiler errors (if any) ==="; grep -E "error:" /tmp/build.log | sort -u | head -25 || true
           grep -q "BUILD SUCCEEDED" /tmp/build.log
 
       - name: Boot sim + capture + frame
