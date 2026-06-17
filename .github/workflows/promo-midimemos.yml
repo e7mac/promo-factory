@@ -1,0 +1,60 @@
+name: promo-midimemos
+on:
+  workflow_dispatch:
+    inputs:
+      caption:
+        description: "Caption for the framed clip"
+        default: "Capture a musical idea in one tap."
+
+jobs:
+  promo:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - name: Checkout promo-factory (harness)
+        uses: actions/checkout@v4
+        with: { path: factory }
+
+      - name: Auth git for private repos (FLEET_PAT)
+        run: |
+          git config --global url."https://x-access-token:${{ secrets.FLEET_PAT }}@github.com/".insteadOf "https://github.com/"
+
+      - name: Checkout fleet repos as siblings (local-path SPM deps resolve)
+        run: |
+          mkdir -p fleet && cd fleet
+          git clone --depth 1 -b promo-capture-proof https://github.com/e7mac/midi-memos.git
+          git clone --depth 1 -b main https://github.com/e7mac/MusicCore.git
+          git clone --depth 1 -b main https://github.com/e7mac/PromoKit.git
+
+      - name: Install xcodegen
+        run: brew install xcodegen
+
+      - name: Generate + build (simulator, no signing)
+        run: |
+          cd fleet/midi-memos
+          xcodegen generate
+          xcodebuild build -scheme MidiMemos \
+            -destination 'platform=iOS Simulator,name=iPhone 16' \
+            CODE_SIGNING_ALLOWED=NO 2>&1 | tail -8
+          test "${PIPESTATUS[0]:-0}" = "0"
+
+      - name: Boot sim + capture + frame
+        run: |
+          UDID=$(xcrun simctl list devices available | grep -E "iPhone 1[5-7] " | grep -oE '[0-9A-F-]{36}' | head -1)
+          xcrun simctl boot "$UDID" || true; xcrun simctl bootstatus "$UDID" -b
+          APP=$(cd fleet/midi-memos && xcodebuild -scheme MidiMemos -destination "id=$UDID" -showBuildSettings 2>/dev/null | awk -F' = ' '/ CODESIGNING_FOLDER_PATH/{print $2}')
+          echo "APP=$APP"; xcrun simctl install "$UDID" "$APP"
+          export PROMO_ROOT="$PWD/promo-out"
+          S=factory/scripts
+          zsh $S/shoot.sh "$UDID" com.e7mac.midimemos midimemos 12 "$PROMO_ROOT/raw"
+          python3 $S/verify.py "$PROMO_ROOT/raw/midimemos.markers" "$PROMO_ROOT/raw/midimemos_audio.wav" || echo "verify nonzero (continuing)"
+          PROMO_CONFIG=$S/cloud.config.sh zsh $S/frameclip.sh \
+            "$PROMO_ROOT/raw/midimemos_video.mp4" "$PROMO_ROOT/raw/midimemos_audio.wav" \
+            "${{ inputs.caption }}" "$PROMO_ROOT/midimemos_promo.mp4"
+          ls -la "$PROMO_ROOT/midimemos_promo.mp4"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: midimemos-promo
+          path: promo-out/midimemos_promo.mp4
+          if-no-files-found: error
