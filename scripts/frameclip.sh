@@ -23,8 +23,10 @@ echo "detect: flash=$TV flash_end=$TVE click=$TA"
 
 if [[ -n "$TV" && -n "$TA" ]]; then
   OFFSET=$(python3 -c "print(round($TV - $TA, 3))")
-  TRIM=$(python3 -c "print(round($TVE + 0.08, 3))")
-  echo "clapperboard: flash@${TV}s click@${TA}s → audio offset ${OFFSET}s, trim @${TRIM}s"
+  # Trim just past the real flash (~0.35s) from its START — blackdetect can over-report
+  # the flash end on dark UIs, which would over-trim the scene.
+  TRIM=$(python3 -c "print(round($TV + 0.45, 3))")
+  echo "clapperboard: flash@${TV}s end@${TVE}s click@${TA}s → audio offset ${OFFSET}s, trim @${TRIM}s"
 else
   # Fallback: no visual flash detected — best-effort, audio at offset 0, no clapperboard trim.
   OFFSET=0; TRIM=0
