@@ -61,9 +61,25 @@ jobs:
           sleep 12
           APP=$(cd fleet/midi-memos && xcodebuild -scheme MidiMemos -destination "id=$UDID" -showBuildSettings 2>/dev/null | awk -F' = ' '/ CODESIGNING_FOLDER_PATH/{print $2}')
           echo "APP=$APP"; xcrun simctl install "$UDID" "$APP"
-          export PROMO_ROOT="$PWD/promo-out"
-          S=factory/scripts
-          zsh $S/shoot.sh "$UDID" com.e7mac.midimemos midimemos 12 "$PROMO_ROOT/raw"
+          export PROMO_ROOT="$PWD/promo-out"; mkdir -p "$PROMO_ROOT/raw"
+          S=factory/scripts; BUNDLE=com.e7mac.midimemos
+          xcrun simctl privacy "$UDID" grant all "$BUNDLE" 2>/dev/null || true
+          xcrun simctl status_bar "$UDID" override --time "9:41" --batteryState charged \
+            --batteryLevel 100 --cellularBars 4 --wifiBars 3 --dataNetwork wifi 2>/dev/null || true
+          # start recording, then a NORMAL (foreground) launch so the app's UI actually shows
+          xcrun simctl io "$UDID" recordVideo --codec h264 --force "$PROMO_ROOT/raw/midimemos_video.mp4" & RP=$!
+          SIMCTL_CHILD_PROMO_DEMO=1 xcrun simctl launch "$UDID" "$BUNDLE"
+          CT=$(xcrun simctl get_app_container "$UDID" "$BUNDLE" data)
+          sleep 3; xcrun simctl io "$UDID" screenshot "$PROMO_ROOT/raw/launch_check.png" 2>/dev/null || true   # foreground check (mid-scene)
+          for i in $(seq 1 32); do grep -q '"ev":"scene-end"' "$CT/Documents/scene.markers" 2>/dev/null && break; sleep 0.5; done
+          sleep 0.5
+          kill -INT $RP 2>/dev/null || true
+          for i in $(seq 1 20); do kill -0 $RP 2>/dev/null || break; sleep 0.5; done
+          kill -KILL $RP 2>/dev/null || true
+          xcrun simctl terminate "$UDID" "$BUNDLE" 2>/dev/null || true
+          cp "$CT/Documents/scene.wav" "$PROMO_ROOT/raw/midimemos_audio.wav"
+          cp "$CT/Documents/scene.markers" "$PROMO_ROOT/raw/midimemos.markers"
+          echo "--- markers ---"; grep '@PROMO' "$PROMO_ROOT/raw/midimemos.markers" || true
           python3 $S/verify.py "$PROMO_ROOT/raw/midimemos.markers" "$PROMO_ROOT/raw/midimemos_audio.wav" || echo "verify nonzero (continuing)"
           PROMO_CONFIG=$S/cloud.config.sh zsh $S/frameclip.sh \
             "$PROMO_ROOT/raw/midimemos_video.mp4" "$PROMO_ROOT/raw/midimemos_audio.wav" \
@@ -79,6 +95,7 @@ jobs:
             promo-out/raw/midimemos_video.mp4
             promo-out/raw/midimemos_audio.wav
             promo-out/raw/midimemos.markers
+            promo-out/raw/launch_check.png
           if-no-files-found: warn
 
       - uses: actions/upload-artifact@v4
