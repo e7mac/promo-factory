@@ -21,21 +21,21 @@ TA=$(ffmpeg -hide_banner -i "$AUD" -af "silencedetect=noise=-30dB:d=0.03" -f nul
   | grep -oE "silence_end: [0-9.]+" | head -1 | grep -oE "[0-9.]+" || true)
 echo "detect: flash=$TV flash_end=$TVE click=$TA"
 
+SKIP=0.5   # start each stream this far past its clapperboard mark (skips the ~0.35s flash/click)
 if [[ -n "$TV" && -n "$TA" ]]; then
-  OFFSET=$(python3 -c "print(round($TV - $TA, 3))")
-  # Trim just past the real flash (~0.35s) from its START — blackdetect can over-report
-  # the flash end on dark UIs, which would over-trim the scene.
-  TRIM=$(python3 -c "print(round($TV + 0.45, 3))")
-  echo "clapperboard: flash@${TV}s end@${TVE}s click@${TA}s → audio offset ${OFFSET}s, trim @${TRIM}s"
+  VSS=$(python3 -c "print(round(max(0.0, $TV + $SKIP), 3))")
+  ASS=$(python3 -c "print(round(max(0.0, $TA + $SKIP), 3))")
+  echo "clapperboard: flash@${TV}s end@${TVE}s click@${TA}s → video from ${VSS}s, audio from ${ASS}s (aligned, clapperboard trimmed)"
 else
-  # Fallback: no visual flash detected — best-effort, audio at offset 0, no clapperboard trim.
-  OFFSET=0; TRIM=0
-  echo "WARN: no clapperboard flash detected — framing with offset 0 (A/V may be slightly off)"
+  VSS=0; ASS=0
+  echo "WARN: no clapperboard flash detected — muxing from start (A/V may be off)"
 fi
 
-# 3. Delay the WAV onto the video timeline, trim off the clapperboard. Preserve VFR video timing.
+# 3. Seek EACH input to its scene-start mark (video→flash, audio→click), so they land aligned;
+#    then mux. Robust to any capture offset (no -itsoffset/output-ss math). -shortest clips to
+#    whichever runs out (the audio scene ends first). Preserve VFR video timing.
 ALIGNED="${OUT:r}_aligned.mp4"
-ffmpeg -y -i "$VID" -itsoffset "$OFFSET" -i "$AUD" -ss "$TRIM" \
+ffmpeg -y -ss "$VSS" -i "$VID" -ss "$ASS" -i "$AUD" \
   -map 0:v -map 1:a -fps_mode:v passthrough -c:v libx264 -pix_fmt yuv420p -crf 18 \
   -c:a aac -b:a 192k -shortest "$ALIGNED" >/dev/null 2>&1
 
